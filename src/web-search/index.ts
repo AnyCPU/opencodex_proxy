@@ -1,4 +1,5 @@
 import type { OcxConfig, OcxParsedRequest, OcxProviderConfig } from "../types";
+import { modelInList } from "../types";
 import type { SidecarSettings } from "./executor";
 
 export { runWithWebSearch } from "./loop";
@@ -54,7 +55,7 @@ export function planWebSearch(
       reasoning: cfg.reasoning ?? DEFAULT_SIDECAR_REASONING,
       timeoutMs: cfg.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       // The routed model is text-only → have the search model verbalize image results.
-      describeImages: !!provider.noVisionModels?.includes(modelId),
+      describeImages: modelInList(provider.noVisionModels, modelId),
     },
     maxSearches: cfg.maxSearchesPerTurn ?? DEFAULT_MAX_SEARCHES,
   };

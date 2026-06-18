@@ -120,6 +120,18 @@ export function namespacedToolName(namespace: string | undefined, name: string):
   return namespace ? `${namespace}__${name}` : name;
 }
 
+/**
+ * Whether `modelId` is in a per-provider classification list (e.g. `noVisionModels`). Matches the full
+ * id, OR — for Ollama-style ids — the family before the ":size" tag, so a `gpt-oss` entry covers
+ * `gpt-oss:120b`/`gpt-oss:20b`. Colon-less ids (e.g. `grok-build-0.1`) still match exactly only.
+ */
+export function modelInList(list: string[] | undefined, modelId: string): boolean {
+  if (!list || list.length === 0) return false;
+  if (list.includes(modelId)) return true;
+  const colon = modelId.indexOf(":");
+  return colon > 0 && list.includes(modelId.slice(0, colon));
+}
+
 export interface OcxRequestOptions {
   maxOutputTokens?: number;
   temperature?: number;

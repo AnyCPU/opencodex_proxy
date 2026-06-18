@@ -1,4 +1,5 @@
 import type { OcxConfig, OcxContentPart, OcxMessage, OcxParsedRequest, OcxProviderConfig, OcxTextContent } from "../types";
+import { modelInList } from "../types";
 import { describeImage, type VisionSettings } from "./describe";
 
 export { describeImage } from "./describe";
@@ -66,7 +67,7 @@ export function planVisionSidecar(
   parsed: OcxParsedRequest,
   incomingHeaders: Headers,
 ): VisionPlan | undefined {
-  if (!provider.noVisionModels?.includes(modelId)) return undefined;
+  if (!modelInList(provider.noVisionModels, modelId)) return undefined;
   if (!messagesHaveImage(parsed)) return undefined;
   const cfg = config.visionSidecar ?? {};
   if (cfg.enabled === false) return undefined;
