@@ -74,7 +74,7 @@ function resolveAdapter(providerConfig: OcxProviderConfig) {
   }
 }
 
-async function handleResponses(req: Request, config: OcxConfig): Promise<Response> {
+async function handleResponses(req: Request, config: OcxConfig, logCtx: { model: string; provider: string }): Promise<Response> {
   let body: unknown;
   try {
     body = await req.json();
@@ -105,6 +105,8 @@ async function handleResponses(req: Request, config: OcxConfig): Promise<Respons
     }
     parsed.modelId = route.modelId;
   }
+  logCtx.model = route.modelId;
+  logCtx.provider = route.providerName;
 
   const adapter = resolveAdapter(route.provider);
 
@@ -289,11 +291,12 @@ export function startServer(port?: number) {
 
       if (url.pathname === "/v1/responses" && req.method === "POST") {
         const start = Date.now();
-        const response = await handleResponses(req, config);
+        const logCtx = { model: "unknown", provider: "unknown" };
+        const response = await handleResponses(req, config, logCtx);
         addRequestLog({
           timestamp: start,
-          model: "unknown",
-          provider: config.defaultProvider,
+          model: logCtx.model,
+          provider: logCtx.provider,
           status: response.status,
           durationMs: Date.now() - start,
         });
