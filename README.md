@@ -158,6 +158,8 @@ for every field.
 The full developer documentation — architecture, every adapter, the request lifecycle, the sidecars,
 Codex integration, and the CLI/config reference — is an Astro site under [`docs-site/`](./docs-site)
 and published to **[lidge-jun.github.io/opencodex](https://lidge-jun.github.io/opencodex/)**.
+Deep implementation notes live under [`docs/`](./docs), including the Codex App/model catalog path
+that makes routed opencodex models appear in the Codex App picker.
 
 ## Development
 
