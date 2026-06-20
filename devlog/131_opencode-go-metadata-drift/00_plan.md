@@ -13,6 +13,26 @@ models. The root cause is that OpenCode Go's `/v1/models` endpoint only exposes
 `id/object/created/owned_by`, while the exact `context/output/modalities` values live in
 OpenCode's official `/data/...` catalog pages.
 
+## Retry Update: Web SOT Split
+
+The first upstream GJC PR (#914) was closed after review because it treated every tracked
+OpenCode Go id as `/v1/chat/completions` and reused generic data-page prices for rows where
+the Go product page publishes a different contract. The retry uses a split source of truth:
+
+- `https://opencode.ai/docs/go/#endpoints` is authoritative for the OpenCode Go gateway
+  endpoint/API SDK path.
+- `https://opencode.ai/docs/go/#usage-limits` is authoritative for current Go product
+  prices when the row appears in that table.
+- `https://opencode.ai/data/...` pages remain authoritative for context/output/modalities.
+- `https://opencode.ai/zen/go/v1/models` is existence-only for this work because it returns
+  model ids without context/output/pricing metadata.
+
+This means MiniMax M2.5/M2.7/M3 and Qwen3.6/3.7 Plus/Max must route to
+`anthropic-messages` on `https://opencode.ai/zen/go`, while GLM/Kimi/DeepSeek/MiMo rows in
+the endpoint table route to `openai-completions` on `https://opencode.ai/zen/go/v1`.
+Qwen Plus rows have tiered prices in the Go usage table; generated rows advertise a 1M
+context window, so the retry encodes the `> 256K tokens` tier.
+
 ## Official Source Values
 
 These are the Phase 131 source-of-truth values verified from official OpenCode data pages on
@@ -45,6 +65,7 @@ These are the Phase 131 source-of-truth values verified from official OpenCode d
 
 Official evidence pages:
 
+- `https://opencode.ai/docs/go/`
 - `https://opencode.ai/data/deepseek/deepseek-v4-flash`
 - `https://opencode.ai/data/zhipu/glm-5-2`
 - `https://opencode.ai/data/moonshot/kimi-k2-7-code`
@@ -111,4 +132,3 @@ Plan:
   `max_context_window`, and `auto_compact_token_limit`.
 - No token values are printed.
 - No unrelated dirty worktree changes are reverted.
-
