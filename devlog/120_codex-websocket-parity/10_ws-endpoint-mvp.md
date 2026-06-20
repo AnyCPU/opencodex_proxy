@@ -32,6 +32,14 @@ Codex WS contract this satisfies:
 01_codex-ws-protocol-analysis.md §6  text-only; client EOF = cancel; server Ping auto-Pong
 ```
 
+> **Implementation note (as shipped):** the actual implementation used a lower-risk variant of
+> the extraction below — the WS handler builds a synthetic `Request` and calls `handleResponses`
+> **unchanged**, then re-frames its `Response.body` SSE onto the socket (cancelling the reader on
+> close = RC2 abort). This avoids the `handleResponsesCore` refactor while achieving identical
+> behavior. The `CoreResult` extraction (below) remains a valid alternative if the pipeline ever
+> needs a non-Response return shape. Verified live: WS upgrade → `response.create` → real
+> opencode-go bridge → `response.completed` (26 frames, content deltas present).
+
 ## Design
 
 1. **Extract `handleResponsesCore`** from `handleResponses`: everything after the JSON body is

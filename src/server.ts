@@ -6,6 +6,8 @@ import { createGoogleAdapter } from "./adapters/google";
 import { createOpenAIChatAdapter } from "./adapters/openai-chat";
 import { createResponsesPassthroughAdapter } from "./adapters/openai-responses";
 import { bridgeToResponsesSSE, buildResponseJSON, formatErrorResponse } from "./bridge";
+import { pumpSseToWebSocket, type WsData } from "./ws-bridge";
+import type { ServerWebSocket } from "bun";
 import { DEFAULT_SUBAGENT_MODELS, loadConfig, saveConfig } from "./config";
 import { parseRequest } from "./responses/parser";
 import { routeModel } from "./router";
@@ -505,13 +507,20 @@ export function startServer(port?: number) {
   }
   const listenPort = port ?? config.port ?? 10100;
 
-  const server = Bun.serve({
+  const server = Bun.serve<WsData>({
     port: listenPort,
     async fetch(req) {
       const url = new URL(req.url);
 
       if (req.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: corsHeaders() });
+      }
+
+      // Responses WebSocket (phase 120.2). Codex upgrades the same /v1/responses path; auth is
+      // handshake-time only, so capture inbound headers and thread them into the pipeline.
+      if (url.pathname === "/v1/responses" && req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        if (server.upgrade(req, { data: { headers: req.headers } })) return undefined as unknown as Response;
+        return formatErrorResponse(426, "upgrade_required", "WebSocket upgrade failed");
       }
 
       if (url.pathname === "/healthz" && req.method === "GET") {
@@ -562,6 +571,53 @@ export function startServer(port?: number) {
       if (guiFile) return guiFile;
 
       return formatErrorResponse(404, "not_found", `Unknown endpoint: ${req.method} ${url.pathname}`);
+    },
+    websocket: {
+      // Responses WebSocket data plane (phase 120.2). Re-frames the same SSE pipeline onto the
+      // socket: parse response.create → run handleResponses unchanged → pump its SSE body as WS
+      // Text frames. response.processed is a no-op ack. close() aborts the upstream (RC2 parity).
+      async message(ws: ServerWebSocket<WsData>, raw: string | Buffer) {
+        let frame: Record<string, unknown>;
+        try {
+          frame = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as Record<string, unknown>;
+        } catch {
+          return; // text-only contract; ignore unparseable frames
+        }
+        if (frame.type === "response.processed") return; // ack — no-op
+        if (frame.type !== "response.create") return;
+        const payload: Record<string, unknown> = { ...frame };
+        delete payload.type;
+        const logCtx = { model: "unknown", provider: "unknown" };
+        const fwd = new Headers({ "content-type": "application/json" });
+        const auth = ws.data.headers?.get("authorization");
+        if (auth) fwd.set("authorization", auth); // native passthrough auth is handshake-time only
+        const req = new Request("http://localhost/v1/responses", {
+          method: "POST",
+          headers: fwd,
+          body: JSON.stringify({ ...payload, stream: true }),
+        });
+        const response = await handleResponses(req, config, logCtx);
+        if (response.headers.get("content-type")?.includes("text/event-stream") && response.body) {
+          await pumpSseToWebSocket(ws, response.body);
+          return;
+        }
+        // Non-SSE (error or non-stream) → wrap as a terminal WS frame.
+        const text = await response.text();
+        try {
+          const json = JSON.parse(text) as Record<string, unknown>;
+          if (response.ok) {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response.completed", response: json }));
+            return;
+          }
+          const error = (json.error as Record<string, unknown>) ?? { message: text.slice(0, 500) };
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response.failed", response: { status: "failed", error } }));
+        } catch {
+          if (ws.readyState === 1) ws.send(JSON.stringify({ type: "response.failed", response: { status: "failed", error: { message: text.slice(0, 500) } } }));
+        }
+      },
+      close(ws: ServerWebSocket<WsData>) {
+        ws.data.cancel?.(); // RC2: abort the upstream when the client disconnects
+      },
     },
   });
 
